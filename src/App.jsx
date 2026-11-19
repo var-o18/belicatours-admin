@@ -4,7 +4,8 @@ import RequireAdmin from './components/RequireAdmin';
 import AdminLayout from './components/AdminLayout';
 import Login from './pages/Login';
 import Reservas from './pages/reservas/Reservas';
-import Actividades from './pages/Actividades';
+import ActividadesList from './pages/actividades/ActividadesList';
+import ActividadEditor from './pages/actividades/ActividadEditor';
 import Pagos from './pages/Pagos';
 
 export default function App() {
@@ -16,7 +17,8 @@ export default function App() {
           <Route element={<RequireAdmin />}>
             <Route element={<AdminLayout />}>
               <Route path="/reservas" element={<Reservas />} />
-              <Route path="/actividades" element={<Actividades />} />
+              <Route path="/actividades" element={<ActividadesList />} />
+              <Route path="/actividades/:id" element={<ActividadEditor />} />
               <Route path="/pagos" element={<Pagos />} />
             </Route>
           </Route>
