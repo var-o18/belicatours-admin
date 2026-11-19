@@ -6,6 +6,8 @@ import { ConfirmDialog } from '../../components/ui';
 import { ACTIVITY_STATUS, CATEGORY_LABEL, slugify } from './meta';
 import PhotosManager from './PhotosManager';
 import SessionsManager from './SessionsManager';
+import PendingPhotos from './PendingPhotos';
+import { removeActivityImage, uploadActivityImage } from '../../lib/images';
 import '../reservas/reservas.css';
 import './actividades.css';
 
@@ -51,6 +53,8 @@ export default function ActividadEditor() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [confirm, setConfirm] = useState(null);
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [savingMsg, setSavingMsg] = useState('');
 
   const load = useCallback(async () => {
     const [a, r] = await Promise.all([
@@ -80,6 +84,31 @@ export default function ActividadEditor() {
   };
 
   const dirty = activity ? JSON.stringify(toForm(activity)) !== JSON.stringify(f) : f.title !== '';
+
+  // Sube las fotos elegidas al crear la actividad; la primera queda de portada.
+  const uploadPending = async (created) => {
+    const failed = [];
+    let cover = null;
+    for (const [i, file] of pendingFiles.entries()) {
+      setSavingMsg(`Subiendo foto ${i + 1} de ${pendingFiles.length}…`);
+      try {
+        const { storage_path, url } = await uploadActivityImage(created.id, file);
+        const { error: err } = await supabase
+          .from('activity_images')
+          .insert({ activity_id: created.id, storage_path, alt_text: created.title, sort_order: i + 1 });
+        if (err) {
+          await removeActivityImage(storage_path).catch(() => {});
+          throw err;
+        }
+        cover ??= url;
+      } catch (err) {
+        failed.push(err.message);
+      }
+    }
+    if (cover) await supabase.from('activities').update({ cover_image_path: cover }).eq('id', created.id);
+    setSavingMsg('');
+    return failed;
+  };
 
   const save = async (e) => {
     e?.preventDefault();
@@ -115,14 +144,21 @@ export default function ActividadEditor() {
     const { data, error: err } = isNew
       ? await supabase.from('activities').insert({ ...payload, status: 'borrador' }).select().single()
       : await supabase.from('activities').update(payload).eq('id', id).select().single();
-    setSaving(false);
 
     if (err) {
+      setSaving(false);
       return setError(
         err.code === '23505' ? 'Ya existe otra actividad con ese identificador web. Cámbialo.' : err.message
       );
     }
-    if (isNew) return navigate(`/actividades/${data.id}`, { replace: true });
+    if (isNew) {
+      const failed = await uploadPending(data);
+      setSaving(false);
+      setPendingFiles([]);
+      if (failed.length) setError(`La actividad se creó, pero no se pudieron subir algunas fotos: ${failed.join(' ')}`);
+      return navigate(`/actividades/${data.id}`, { replace: true });
+    }
+    setSaving(false);
     setActivity(data);
     setF(toForm(data));
     setSaved(true);
@@ -216,7 +252,7 @@ export default function ActividadEditor() {
 
       {error ? <p className="alert" style={{ marginBottom: 16 }}>{error}</p> : null}
 
-      <div className={`editor${isNew ? ' editor--single' : ''}`}>
+      <div className="editor">
         <form className="panel" onSubmit={save} noValidate>
           <h2 className="panel__title">Información</h2>
 
@@ -322,11 +358,16 @@ export default function ActividadEditor() {
               </button>
             ) : null}
             <button type="submit" className="btn btn--primary" disabled={saving || !dirty}>
-              <Save size={16} /> {saving ? 'Guardando…' : isNew ? 'Crear actividad' : 'Guardar cambios'}
+              <Save size={16} /> {saving ? savingMsg || 'Guardando…' : isNew ? 'Crear actividad' : 'Guardar cambios'}
             </button>
           </div>
         </form>
 
+        {isNew ? (
+          <div className="editor__side">
+            <PendingPhotos files={pendingFiles} onChange={setPendingFiles} disabled={saving} />
+          </div>
+        ) : null}
         {!isNew && activity ? (
           <div className="editor__side">
             <PhotosManager activity={activity} onActivityChange={setActivity} />
