@@ -5,6 +5,13 @@ import { STATUS, STATUS_ORDER, SOURCE_LABEL, formatDateTime, formatMoney, fullNa
 import { ConfirmDialog, Modal, StatusBadge } from '../../components/ui';
 import ReservationForm from './ReservationForm';
 
+const EMAIL_LABEL = {
+  recepcion: 'Solicitud recibida',
+  aceptacion: 'Confirmación y datos de pago',
+  aviso_admin: 'Aviso de nueva reserva',
+};
+const EMAIL_STATUS = { pendiente: 'En cola', enviado: 'Enviado', fallido: 'Falló' };
+
 const EVENT_LABEL = { creada: 'Reserva creada', editada: 'Datos editados', eliminada: 'Eliminada' };
 
 // Cambios que piden confirmación antes de aplicarse
@@ -16,6 +23,8 @@ const CONFIRM = {
 export default function ReservationDrawer({ id, catalog, onClose, onChanged }) {
   const [res, setRes] = useState(null);
   const [events, setEvents] = useState([]);
+  const [emails, setEmails] = useState([]);
+  const [retrying, setRetrying] = useState(null);
   const [error, setError] = useState('');
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
@@ -25,11 +34,16 @@ export default function ReservationDrawer({ id, catalog, onClose, onChanged }) {
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
-    const [r, e] = await Promise.all([
+    const [r, e, m] = await Promise.all([
       supabase.from('reservations').select('*, activity:activities(id, title)').eq('id', id).single(),
       supabase
         .from('reservation_events')
         .select('id, event_type, old_status, new_status, created_at')
+        .eq('reservation_id', id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('email_log')
+        .select('id, email_type, recipient, status, error, created_at, sent_at')
         .eq('reservation_id', id)
         .order('created_at', { ascending: false }),
     ]);
@@ -37,7 +51,17 @@ export default function ReservationDrawer({ id, catalog, onClose, onChanged }) {
     setRes(r.data);
     setNotes(r.data.internal_notes ?? '');
     setEvents(e.data ?? []);
+    setEmails(m.data ?? []);
   }, [id]);
+
+  const retryEmail = async (logId) => {
+    setRetrying(logId);
+    const { error: err } = await supabase.rpc('retry_email', { p_log_id: logId });
+    setRetrying(null);
+    if (err) return setError(err.message);
+    setTimeout(load, 4000);
+    load();
+  };
 
   useEffect(() => {
     load();
@@ -203,6 +227,47 @@ export default function ReservationDrawer({ id, catalog, onClose, onChanged }) {
                   {savingNotes ? 'Guardando…' : 'Guardar nota'}
                 </button>
               ) : null}
+            </section>
+
+            <section>
+              <div className="section-head">
+                <h3>Correos</h3>
+                <button className="btn btn--ghost btn--sm" onClick={load}>
+                  Actualizar
+                </button>
+              </div>
+              {emails.length ? (
+                <ul className="emails">
+                  {emails.map((m) => (
+                    <li key={m.id}>
+                      <div>
+                        <b>{EMAIL_LABEL[m.email_type] ?? m.email_type}</b>
+                        <span className={`email-status email-status--${m.status}`}>{EMAIL_STATUS[m.status]}</span>
+                      </div>
+                      <small>
+                        {m.email_type === 'aviso_admin' ? 'Para Bélica Tours' : m.recipient} ·{' '}
+                        {formatDateTime(m.sent_at ?? m.created_at)}
+                      </small>
+                      {m.status === 'fallido' ? (
+                        <>
+                          {m.error ? <small className="danger-text">{m.error}</small> : null}
+                          <button
+                            className="btn btn--ghost btn--sm"
+                            onClick={() => retryEmail(m.id)}
+                            disabled={retrying === m.id}
+                          >
+                            <Mail size={14} /> {retrying === m.id ? 'Reintentando…' : 'Reintentar'}
+                          </button>
+                        </>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="hint">
+                  {res.email ? 'No se ha enviado ningún correo para esta reserva.' : 'Sin correo del cliente: no se envían correos.'}
+                </p>
+              )}
             </section>
 
             <section>
