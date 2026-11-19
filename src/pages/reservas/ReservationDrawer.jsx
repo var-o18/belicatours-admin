@@ -159,6 +159,11 @@ export default function ReservationDrawer({ id, catalog, onClose, onChanged }) {
               {res.status === 'aceptada' ? (
                 <p className="hint">Marca «Pagada» solo cuando hayas comprobado el Bizum o la transferencia con este código.</p>
               ) : null}
+              {res.status === 'cancelada' && res.cancel_reason ? (
+                <p className="cancel-reason">
+                  <b>Motivo de la cancelación:</b> {res.cancel_reason}
+                </p>
+              ) : null}
             </section>
 
             <section>
@@ -297,7 +302,19 @@ export default function ReservationDrawer({ id, catalog, onClose, onChanged }) {
         )}
       </Modal>
 
-      {confirm?.status ? (
+      {confirm?.status === 'cancelada' ? (
+        <CancelDialog
+          code={res.booking_code}
+          email={res.email}
+          busy={busy}
+          onConfirm={({ reason, notify }) =>
+            update({ status: 'cancelada', cancel_reason: reason || null, cancel_notify: notify && !!res.email })
+          }
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
+
+      {confirm?.status && confirm.status !== 'cancelada' ? (
         <ConfirmDialog
           title={`¿Pasar a «${STATUS[confirm.status].label}»?`}
           message={CONFIRM[confirm.status]}
@@ -334,5 +351,60 @@ export default function ReservationDrawer({ id, catalog, onClose, onChanged }) {
         />
       ) : null}
     </>
+  );
+}
+
+function CancelDialog({ code, email, busy, onConfirm, onCancel }) {
+  const [reason, setReason] = useState('');
+  const [notify, setNotify] = useState(Boolean(email));
+  return (
+    <Modal
+      title="¿Cancelar la reserva?"
+      onClose={onCancel}
+      width={460}
+      footer={
+        <>
+          <button type="button" className="btn btn--ghost" onClick={onCancel} disabled={busy}>
+            Volver
+          </button>
+          <button
+            type="button"
+            className="btn btn--danger"
+            onClick={() => onConfirm({ reason: reason.trim(), notify })}
+            disabled={busy || (notify && !reason.trim())}
+          >
+            {busy ? 'Un momento…' : 'Sí, cancelar'}
+          </button>
+        </>
+      }
+    >
+      <p style={{ margin: '0 0 14px' }}>
+        {code} quedará cancelada y dejará de ocupar plazas. Se conserva en el historial.
+      </p>
+      <label className="field">
+        <span>Motivo{notify ? ' *' : ''}</span>
+        <textarea
+          className="input textarea"
+          rows={4}
+          maxLength={1000}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Por ejemplo: la ruta se suspende por previsión de lluvia. Te proponemos cambiar a otra fecha."
+          autoFocus
+        />
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={notify} disabled={!email} onChange={(e) => setNotify(e.target.checked)} />
+        <span>
+          {email ? (
+            <>
+              Enviar el motivo por correo al cliente (<b>{email}</b>)
+            </>
+          ) : (
+            'La reserva no tiene correo: no se puede avisar al cliente por email.'
+          )}
+        </span>
+      </label>
+    </Modal>
   );
 }

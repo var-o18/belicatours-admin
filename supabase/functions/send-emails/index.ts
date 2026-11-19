@@ -94,7 +94,7 @@ const p = (html: string) => `<p style="font-size:15px;line-height:1.6;margin:0 0
 type Reservation = {
   id: string; booking_code: string; event_at: string; first_name: string; last_name: string;
   email: string | null; phone: string | null; adults: number; children: number; amount: number;
-  currency: string; status: string; source: string; customer_notes: string | null;
+  currency: string; status: string; source: string; customer_notes: string | null; cancel_reason: string | null;
   activities: { title: string; meeting_point: string | null; duration: string | null } | null;
 };
 type Payment = {
@@ -195,6 +195,23 @@ function buildConfirmation(r: Reservation) {
   return { subject, html, payload: { subject } };
 }
 
+function buildCancellation(r: Reservation, wasPaid: boolean) {
+  const subject = `Reserva cancelada · ${r.booking_code} · ${r.activities?.title ?? ''}`;
+  const reason = r.cancel_reason?.trim()
+    ? `<div style="border-left:3px solid #9b3a24;background:#faf7f1;padding:12px 16px;margin:0 0 14px;font-size:15px;line-height:1.6">
+<div style="font-size:12px;letter-spacing:1px;color:#9b3a24;font-weight:700;margin-bottom:4px">MOTIVO</div>${esc(r.cancel_reason.trim()).replace(/\n/g, '<br>')}</div>`
+    : '';
+  const html = layout(
+    `Tu reserva ha sido cancelada`,
+    p(`Hola, ${esc(r.first_name)}. Lamentamos comunicarte que <strong>tu reserva ha sido cancelada</strong>.`) +
+      reason +
+      table(bookingRows(r).slice(0, 6)) +
+      (wasPaid ? p('Como ya habías realizado el pago, nos pondremos en contacto contigo para gestionar la devolución.') : '') +
+      p('Si quieres cambiar a otra fecha o tienes cualquier duda, escríbenos y lo vemos juntos.')
+  );
+  return { subject, html, payload: { subject, reason: r.cancel_reason ?? null, was_paid: wasPaid } };
+}
+
 function buildAdminNotice(r: Reservation) {
   const subject = `Nueva reserva web · ${r.activities?.title ?? ''} · ${fmtDate(r.event_at)} ${fmtTime(r.event_at)}`;
   const rows: Row[] = [
@@ -265,6 +282,15 @@ async function processQueue() {
       else if (log.email_type === 'aceptacion') {
         if (r.status !== 'aceptada') throw new Error('La reserva ya no está aceptada; no se envía');
         msg = buildAcceptance(r, pay as Payment);
+      } else if (log.email_type === 'cancelacion') {
+        if (r.status !== 'cancelada') throw new Error('La reserva ya no está cancelada; no se envía');
+        const { data: paidEvents } = await db
+          .from('reservation_events')
+          .select('id')
+          .eq('reservation_id', r.id)
+          .eq('new_status', 'pagada')
+          .limit(1);
+        msg = buildCancellation(r, (paidEvents?.length ?? 0) > 0);
       } else if (log.email_type === 'confirmacion') {
         if (r.status !== 'pagada') throw new Error('La reserva ya no está pagada; no se envía');
         msg = buildConfirmation(r);
