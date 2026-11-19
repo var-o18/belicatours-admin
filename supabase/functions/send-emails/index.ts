@@ -116,11 +116,29 @@ function bookingRows(r: Reservation): Row[] {
   return rows;
 }
 
+// Los tres pasos de la reserva; `current` es el paso en el que está el cliente (1-3)
+function steps(current: number) {
+  const items = ['Solicitud recibida', 'Pago', 'Reserva confirmada'];
+  const cells = items
+    .map((label, i) => {
+      const n = i + 1;
+      const done = n <= current;
+      return `<td style="text-align:center;width:33%;vertical-align:top;padding:0 4px">
+<div style="display:inline-block;width:26px;height:26px;line-height:26px;border-radius:13px;font-size:13px;font-weight:700;${
+        done ? 'background:#9b3a24;color:#fff' : 'border:1.5px solid #d9cdb8;color:#9b8f80'
+      }">${n}</div>
+<div style="font-size:12px;margin-top:6px;color:${n === current ? '#1f1a14;font-weight:700' : '#7a6d5c'}">${label}</div></td>`;
+    })
+    .join('');
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:6px 0 18px"><tr>${cells}</tr></table>`;
+}
+
 function buildReception(r: Reservation) {
   const subject = `Hemos recibido tu solicitud de reserva · ${r.booking_code}`;
   const html = layout(
     `¡Gracias, ${r.first_name}!`,
-    p('Hemos recibido tu solicitud de reserva. <strong>Todavía no está confirmada</strong>: revisamos la disponibilidad y en breve te enviaremos un correo con la confirmación y los datos para el pago.') +
+    steps(1) +
+      p('Hemos recibido tu solicitud de reserva. Revisamos la disponibilidad y en breve te enviaremos <strong>otro correo con los datos para pagar</strong>. Cuando recibamos el pago, tu reserva quedará confirmada.') +
       table(bookingRows(r)) +
       p('Guarda el código de reserva: lo necesitarás para el pago y si quieres hacer algún cambio.')
   );
@@ -128,7 +146,7 @@ function buildReception(r: Reservation) {
 }
 
 function buildAcceptance(r: Reservation, pay: Payment) {
-  const subject = `Reserva confirmada · ${r.booking_code} · Datos de pago`;
+  const subject = `Tenemos plaza para ti · ${r.booking_code} · Completa el pago`;
   const methods: string[] = [];
   if (pay.bizum_enabled && pay.bizum_phone) {
     methods.push(
@@ -151,15 +169,30 @@ function buildAcceptance(r: Reservation, pay: Payment) {
   const payBlock = methods.length
     ? p(`Para completar la reserva, realiza el pago de <strong>${esc(fmtMoney(r.amount, r.currency))}</strong> por uno de estos medios:`) +
       methods.join('') +
-      p(`Indica como concepto el código <strong style="font-family:monospace">${esc(r.booking_code)}</strong>. Cuando lo recibamos te lo confirmaremos.`)
+      p(`Indica como concepto el código <strong style="font-family:monospace">${esc(r.booking_code)}</strong>. Cuando lo recibamos te enviaremos la confirmación definitiva de tu reserva.`)
     : p('En breve te contactaremos para indicarte cómo realizar el pago.');
 
   const html = layout(
-    `¡Tu reserva está confirmada, ${r.first_name}!`,
-    p('Tenemos plaza para ti. Estos son los datos de tu reserva:') + table(bookingRows(r)) + payBlock
+    `¡Tenemos plaza para ti, ${r.first_name}!`,
+    steps(2) +
+      p('Hemos comprobado la disponibilidad y tu plaza está guardada. <strong>Solo falta el pago</strong> para confirmar la reserva.') +
+      table(bookingRows(r)) +
+      payBlock
   );
   // Copia de los datos de pago enviados, para saber qué recibió el cliente
   return { subject, html, payload: { subject, payment: pay } };
+}
+
+function buildConfirmation(r: Reservation) {
+  const subject = `Reserva confirmada · ${r.booking_code} · ${r.activities?.title ?? ''}`;
+  const html = layout(
+    `¡Reserva confirmada, ${r.first_name}!`,
+    steps(3) +
+      p('Hemos recibido tu pago. <strong>Tu reserva está confirmada</strong>: te esperamos en la fecha indicada.') +
+      table(bookingRows(r)) +
+      p('Te recomendamos llegar al punto de encuentro unos minutos antes de la hora. Si surge cualquier imprevisto, avísanos por WhatsApp.')
+  );
+  return { subject, html, payload: { subject } };
 }
 
 function buildAdminNotice(r: Reservation) {
@@ -232,6 +265,9 @@ async function processQueue() {
       else if (log.email_type === 'aceptacion') {
         if (r.status !== 'aceptada') throw new Error('La reserva ya no está aceptada; no se envía');
         msg = buildAcceptance(r, pay as Payment);
+      } else if (log.email_type === 'confirmacion') {
+        if (r.status !== 'pagada') throw new Error('La reserva ya no está pagada; no se envía');
+        msg = buildConfirmation(r);
       } else {
         to = ADMIN_EMAIL;
         replyTo = r.email || GMAIL_USER;

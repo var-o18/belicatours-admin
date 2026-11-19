@@ -7,7 +7,8 @@ import ReservationForm from './ReservationForm';
 
 const EMAIL_LABEL = {
   recepcion: 'Solicitud recibida',
-  aceptacion: 'Confirmación y datos de pago',
+  aceptacion: 'Plaza disponible · datos de pago',
+  confirmacion: 'Reserva confirmada (pago recibido)',
   aviso_admin: 'Aviso de nueva reserva',
 };
 const EMAIL_STATUS = { pendiente: 'En cola', enviado: 'Enviado', fallido: 'Falló' };
