@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, Archive, ArchiveRestore, Trash2, Save, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Archive, ArchiveRestore, Trash2, Save, ExternalLink, Plus, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ConfirmDialog } from '../../components/ui';
-import { ACTIVITY_STATUS, CATEGORY_LABEL, slugify } from './meta';
+import { ACTIVITY_STATUS, CATEGORY_LABEL, MAX_CATEGORIES, slugify } from './meta';
 import PhotosManager from './PhotosManager';
 import SessionsManager from './SessionsManager';
 import PendingPhotos from './PendingPhotos';
@@ -15,7 +15,7 @@ const EMPTY = {
   title: '',
   slug: '',
   subtitle: '',
-  category: 'experiencias',
+  categories: ['experiencias'],
   description: '',
   long_description: '',
   duration: '',
@@ -31,6 +31,7 @@ const EMPTY = {
 const toForm = (a) => ({
   ...EMPTY,
   ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, a[k] ?? ''])),
+  categories: a.categories?.length ? a.categories : [a.category ?? 'experiencias'],
   highlights: (a.highlights ?? []).join('\n'),
   price_adult: a.price_adult != null ? String(a.price_adult) : '',
   price_child: a.price_child != null ? String(a.price_child) : '',
@@ -127,7 +128,7 @@ export default function ActividadEditor() {
       title: f.title.trim(),
       slug: f.slug,
       subtitle: f.subtitle.trim() || null,
-      category: f.category,
+      categories: f.categories,
       description: f.description.trim() || null,
       long_description: f.long_description.trim() || null,
       duration: f.duration.trim() || null,
@@ -266,16 +267,10 @@ export default function ActividadEditor() {
                 <span>Subtítulo</span>
                 <input className="input" value={f.subtitle} onChange={set('subtitle')} />
               </label>
-              <label className="field">
-                <span>Categoría</span>
-                <select className="input" value={f.category} onChange={set('category')}>
-                  {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <CategoriesField
+                value={f.categories}
+                onChange={(categories) => setF((prev) => ({ ...prev, categories }))}
+              />
               <label className="field">
                 <span>
                   Identificador web
@@ -408,5 +403,59 @@ export default function ActividadEditor() {
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * Una o varias categorías. La primera es la principal; con «+» se añade otra
+ * (por ejemplo, Visita guiada + Gastronomía) y la actividad aparece en los
+ * filtros de todas ellas en la web.
+ */
+function CategoriesField({ value, onChange }) {
+  const all = Object.keys(CATEGORY_LABEL);
+  const unused = all.filter((c) => !value.includes(c));
+
+  const change = (i, c) => onChange(value.map((v, j) => (j === i ? c : v)));
+  const remove = (i) => onChange(value.filter((_, j) => j !== i));
+  const add = () => unused.length && onChange([...value, unused[0]]);
+
+  return (
+    <div className="field">
+      <span>
+        Categoría
+        {value.length > 1 && <small className="field-note">aparece en todos estos filtros</small>}
+      </span>
+      <div className="cats">
+        {value.map((c, i) => (
+          <div className="cats__row" key={i}>
+            {i > 0 && <span className="cats__plus">+</span>}
+            <select
+              className="input"
+              aria-label={i === 0 ? 'Categoría principal' : `Categoría ${i + 1}`}
+              value={c}
+              onChange={(e) => change(i, e.target.value)}
+            >
+              {all
+                .filter((k) => k === c || !value.includes(k))
+                .map((k) => (
+                  <option key={k} value={k}>
+                    {CATEGORY_LABEL[k]}
+                  </option>
+                ))}
+            </select>
+            {value.length > 1 && (
+              <button type="button" className="icon-btn" onClick={() => remove(i)} aria-label={`Quitar ${CATEGORY_LABEL[c]}`}>
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        ))}
+        {value.length < MAX_CATEGORIES && (
+          <button type="button" className="btn btn--ghost btn--sm cats__add" onClick={add}>
+            <Plus size={14} /> Añadir otra categoría
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

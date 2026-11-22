@@ -4,7 +4,7 @@ import { Plus, CalendarDays, Users, ImageOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { formatDate, formatMoney } from '../../lib/format';
 import { imageUrl } from '../../lib/images';
-import { ACTIVITY_STATUS, CATEGORY_LABEL } from './meta';
+import { ACTIVITY_STATUS, categoriesLabel } from './meta';
 import '../reservas/reservas.css';
 import './actividades.css';
 
@@ -26,7 +26,7 @@ export default function ActividadesList() {
     Promise.all([
       supabase
         .from('activities')
-        .select('id, slug, title, category, price_adult, status, cover_image_path, activity_sessions(starts_at, status)')
+        .select('id, slug, title, category, categories, price_adult, status, cover_image_path, activity_sessions(starts_at, status)')
         .order('sort_order'),
       supabase.from('reservations').select('activity_id, guests, status, event_at'),
     ]).then(([a, r]) => {
@@ -105,7 +105,7 @@ export default function ActividadesList() {
                   </span>
                 </div>
                 <div className="act-card__body">
-                  <small>{CATEGORY_LABEL[a.category]}</small>
+                  <small>{categoriesLabel(a)}</small>
                   <h2>{a.title}</h2>
                   <div className="act-card__meta">
                     <span>

@@ -366,3 +366,27 @@
     flex: 1;
   }
 }
+
+/* Varias categorías por actividad */
+.cats {
+  display: grid;
+  gap: 8px;
+}
+.cats__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cats__row .input {
+  flex: 1;
+  min-width: 0;
+}
+.cats__plus {
+  font-weight: 600;
+  color: var(--muted, #888);
+  width: 12px;
+  text-align: center;
+}
+.cats__add {
+  justify-self: start;
+}
